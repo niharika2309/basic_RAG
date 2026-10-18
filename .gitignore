@@ -8,3 +8,6 @@ __pycache__/
 # Generated artifacts (recreated by the step scripts)
 chunks.json
 vector_store.json
+
+# Article drafts (for the Substack series) — not part of the app
+posts/

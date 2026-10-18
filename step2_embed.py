@@ -6,17 +6,18 @@ question.
 
 We do the converting with a small model called MiniLM, which runs on
 your computer: no API key, no cost, private. (On the first run it
-downloads itself, ~90 MB.)
+downloads itself, ~130 MB.)
 
     chunks.json  -->  vector_store.json        (this step)
 
-vector_store.json is our simple "vector database". For every chunk it
-keeps the three things a vector database stores (from Day 4 of the
-series):
+vector_store.json is our "vector database" — deliberately a plain JSON
+file, not a real one (no Chroma, Milvus, ...). For a few hundred chunks
+a file is fast enough, and it keeps the whole pipeline visible.
+For every chunk it stores the three things any vector database stores:
 
     - the text chunk
     - its embedding (384 numbers)
-    - metadata (section, page)
+    - its metadata (the page it came from)
 
 Run:  python step2_embed.py
 """

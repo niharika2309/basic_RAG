@@ -1,11 +1,17 @@
-# Talks to the LLM (any OpenAI-compatible API)
-openai>=2.48
-
-# Fast vector math for the search step
-numpy>=2.0
+# Reads the PDF (step 1)
+pypdf>=6.0
 
 # The local MiniLM embedding model (pulls in PyTorch — a large one-time download)
 sentence-transformers>=5.1
 
-# Reads the PDF
-pypdf>=6.0
+# Vector math for the search step
+numpy>=2.0
+
+# Talks to the LLM (step 4 / the web app)
+openai>=2.48
+
+# Loads the .env config file
+python-dotenv>=1.0
+
+# The ChatGPT-style web UI (app.py)
+streamlit>=1.50
