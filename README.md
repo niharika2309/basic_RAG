@@ -178,21 +178,28 @@ Question: Can I take a day off to attend my sister's wedding?
 
 Retrieved chunks (R):
   0.39   [V. BENEFITS AND LEAVES OF ABSENCE > C. Holidays  p.15]
-  0.37   [V. BENEFITS AND LEAVES OF ABSENCE > L. Bereavement Leave  p.28]
-  ...
+  0.37   [VI. STANDARDS OF CONDUCT > L. Visitors in the Workplace  p.38]
+  0.37   [V. BENEFITS AND LEAVES OF ABSENCE > L. Ber eavem ent Leave  p.28]
+  0.36   [IV. PAYROLL, SCHEDULING AND OVERTIME PRACTICES > C. Meals and Rest Bre aks  p.11]
+  0.36   [IV. PAYROLL, SCHEDULING AND OVERTIME PRACTICES > C. Meals and Rest Bre aks  p.11]
 
-Answer (from gpt-4o-mini at https://api.openai.com/v1):
+Answer (from Qwen3.8-27B):
 
-  <the model's grounded answer appears here>
+  The provided handbook excerpts do not contain a policy about taking a
+  day off to attend a sister's wedding. I can't confirm whether you may
+  take that day off based only on these excerpts.
 
-Sources: V. ... > C. Holidays (p.15), V. ... > L. Bereavement Leave (p.28), ...
+Sources: V. BENEFITS AND LEAVES OF ABSENCE > C. Holidays (p.15), ...
 ```
+
+(Real output from a local Qwen3.8-27B run; other models will word it
+differently but behave the same.)
 
 This is R = retrieve, A = augment the prompt with the context,
 G = generate. And notice what an honest RAG system does when the
-handbook has no wedding-specific policy: it tells you what the handbook
-*does* say (vacation, bereavement, approvals), instead of inventing a
-policy that doesn't exist.
+handbook has no wedding-specific policy: it says so, instead of
+inventing a policy that doesn't exist. No hallucinated "5 personal
+days per year" — because the model was only ever shown what it found.
 
 **No API key?** Add `--dry-run` to see the exact prompt without calling
 the LLM:
@@ -222,9 +229,10 @@ your shell) — no code changes:
 
 | Variable | Default | What it controls |
 |----------|---------|------------------|
-| `LLM_API_KEY` | — (required for step 4) | key for your LLM API |
+| `LLM_API_KEY` | — (required for step 4) | key for your LLM API (a local server may accept `none`) |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | any OpenAI-compatible endpoint |
 | `LLM_MODEL` | `gpt-4o-mini` | the chat model |
+| `LLM_MAX_TOKENS` | `2000` | budget for the answer |
 | `EMBEDDING_MODEL` | `all-MiniLM-L12-v2` | the local embedding model |
 
 Examples:
@@ -240,6 +248,12 @@ export LLM_BASE_URL=http://localhost:11434/v1
 export LLM_MODEL=qwen2.5:7b
 export LLM_API_KEY=ollama   # any value works with Ollama
 ```
+
+One quirk to know: **"reasoning" models** (Qwen3, the o-series, ...)
+spend token budget *thinking* before they answer. This project
+defaults to a generous 2000-token budget precisely so those models
+can finish their thinking; if an answer ever comes back empty, the
+script tells you to raise `LLM_MAX_TOKENS`.
 
 For embeddings, `all-MiniLM-L6-v2` is a smaller/faster alternative to the
 default `all-MiniLM-L12-v2` (both produce 384-number vectors). If you

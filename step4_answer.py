@@ -20,7 +20,7 @@ Run:
 
 import sys
 
-from helpers import LLM_BASE_URL, LLM_MODEL, get_llm, require_api_key
+from helpers import LLM_BASE_URL, LLM_MAX_TOKENS, LLM_MODEL, get_llm, require_api_key
 from step3_search import TOP_K, load_store, vector_search
 
 DEFAULT_QUESTION = "Can I take a day off to attend my sister's wedding?"
@@ -80,15 +80,29 @@ def main():
             {"role": "user", "content": prompt},
         ],
         temperature=0,  # we want grounded answers, not creativity
-        max_tokens=300,  # keep answers short — and costs tiny
+        max_tokens=LLM_MAX_TOKENS,
     )
 
+    content = response.choices[0].message.content
+    if content is None:
+        print(
+            "The LLM returned no text — it may have spent the whole token\n"
+            "budget reasoning before answering. Try a bigger budget, e.g.:\n"
+            f"    export LLM_MAX_TOKENS={LLM_MAX_TOKENS * 2}\n"
+        )
+        return
+
     print(f"Answer (from {LLM_MODEL} at {LLM_BASE_URL}):\n")
-    print(response.choices[0].message.content)
+    print(content)
     print()
-    print("Sources: " + ", ".join(
-        f"{h[0]['metadata']['section']} (p.{h[0]['metadata']['page']})" for h in hits
-    ))
+    # A few retrieved chunks can come from the same section; list each once.
+    seen, sources = set(), []
+    for entry, _ in hits:
+        label = f"{entry['metadata']['section']} (p.{entry['metadata']['page']})"
+        if label not in seen:
+            seen.add(label)
+            sources.append(label)
+    print("Sources: " + ", ".join(sources))
 
 
 if __name__ == "__main__":
