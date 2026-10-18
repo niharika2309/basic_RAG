@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+
+# Secrets
+.env
+
+# Generated artifacts (recreated by the step scripts)
+chunks.json
+vector_store.json
