@@ -105,8 +105,12 @@ def render_sources(hits):
     expander with the exact passages behind them."""
     if not hits:
         return
-    pages = [h[0]["metadata"]["page"] for h in hits]
-    st.markdown("**Sources: **handbook pages " + ", ".join(map(str, pages)))
+    pages = []
+    for entry, _ in hits:
+        p = entry["metadata"]["page"]
+        if p not in pages:
+            pages.append(p)
+    st.markdown("**Sources:** handbook pages " + ", ".join(map(str, pages)))
     with st.expander(f"🔍 The {len(hits)} handbook passages I used"):
         for entry, score in hits:
             excerpt = entry["text"]

@@ -20,6 +20,9 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2000"))
+LLM_EVAL_MODEL = os.getenv("LLM_EVAL_MODEL", "gpt-4o-mini")
+LLM_EVAL_BASE_URL = os.getenv("LLM_EVAL_BASE_URL", "https://api.openai.com/v1")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 _embedder = None
 
@@ -75,10 +78,23 @@ def get_llm():
         _llm_client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
     return _llm_client
 
+def get_llm_eval():
+    """Create an OpenAI-compatible chat client (only once).
+
+    Works with any API that speaks the OpenAI protocol — OpenAI itself,
+    Groq, OpenRouter, a local Ollama server, and so on.
+    """
+    global _llm_client
+    if _llm_client is None:
+        from openai import OpenAI
+
+        _llm_client = OpenAI(api_key=OPENAI_API_KEY, base_url=LLM_EVAL_BASE_URL)
+    return _llm_client
+
 
 def require_api_key():
     """Fail with a friendly message if no LLM key is configured."""
-    if not LLM_API_KEY:
+    if not LLM_API_KEY or not OPENAI_API_KEY:
         raise SystemExit(
             "No LLM API key found.\n"
             "  1) Copy .env.example to .env and add your key, or\n"
