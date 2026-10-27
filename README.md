@@ -208,32 +208,17 @@ python step4_answer.py --dry-run "..."     # watch the prompt's excerpts reorder
 
 In the web app you don't have to ask twice: under every answer there's a
 **🔁 The same passages, before and after the re-check** panel — the search's
-own top 5 in one column, the reranker's in the next, every move marked (it
-renders side by side; it's stacked here):
+own top 5 in one column, the reranker's in the next, every move marked.
+Here it is for the vacation question above, straight from the app:
 
-```
-🔁 The re-check moved 3 of 5 passages · dropped page 5 · dropped page 9
+![The rerank panel in the Streamlit app: the search's top 5 next to the reranker's top 5, with every move marked](screenshots/rerank_before_after.png)
 
-Before — the search's own top 5
-  1. p.10 · similar 0.671 — ✓ kept
-  2. p.10 · similar 0.635 — ✓ kept
-  3. p.3  · similar 0.602 — → moved to #4
-  4. p.5  · similar 0.555 — ✕ dropped out
-  5. p.9  · similar 0.502 — ✕ dropped out
-
-After — the reranker's top 5
-  1. p.10 · relevance 0.998 — ✓ stayed
-  2. p.10 · relevance 0.973 — ✓ stayed
-  3. p.5  · relevance 0.098 — ▲ new — was #8
-  4. p.3  · relevance 0.017 — ▼ from #3
-  5. p.3  · relevance 0.013 — ▲ new — was #7
-```
-
-That last pair of lines is the whole argument for the second pass: two chunks
-ranked 7th and 8th by similarity — never good enough to reach the LLM on
-their own — do answer the question, and the reranker is the only stage that
-can notice. (Flip the sidebar toggle off and the panel disappears: with one
-pass there's nothing to compare.)
+Same five chunks in, a different reading order out. The search's #2 was that
+table-of-contents line — *0.514 similar* — and the reranker, having actually
+read it against the question, gave it *0.001 relevant* and sent it down to
+#4; the chunk holding the real vacation accrual rules jumped from #3 to #1,
+so that's the one the LLM reads first. (Flip the sidebar toggle off and the
+panel disappears: with one pass there's nothing to compare.)
 
 The cost is honest and small: one more local model (~100 MB, free to run,
 downloads once), plus one pass of it over 20 candidates per question — well
@@ -309,8 +294,9 @@ streamlit run app.py
 
 then open <http://localhost:8501>. Ask a question, get an answer, and a
 footer underneath shows the handbook passages it used, with their pages and
-their reranker scores — plus the before/after panel from step 3.5, so the
-reranker's effect is visible without asking anything twice. The sidebar
+their reranker scores — plus the before/after panel from step 3.5 (the
+screenshot above is straight from this app), so the reranker's effect is
+visible without asking anything twice. The sidebar
 explains the whole pipeline in plain language, and its **Re-check results
 with the reranker** toggle turns the second pass off entirely, so you can
 see what retrieval looks like without it. Without an LLM
@@ -448,6 +434,7 @@ One concept at a time.
 ├── step4_answer.py              top 5 chunks + question → LLM answer
 ├── app.py                       ChatGPT-style web UI (streamlit run app.py)
 ├── evaluate_rag.py              RAGAS scores for the same pipeline
+├── screenshots/                 README images (the rerank before/after panel)
 ├── requirements.txt
 └── .env.example                 copy to .env, add your key
 ```
