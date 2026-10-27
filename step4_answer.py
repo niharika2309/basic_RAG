@@ -2,12 +2,13 @@
 
 RAG = Retriever + Augmented prompt + Generator:
 
-    R — retrieve the most relevant chunks     (step 3)
+    R — retrieve the most relevant chunks     (step 3: search, then rerank)
     A — augment the prompt with them          (this step)
     G — ask the LLM to answer using ONLY that context
 
-The LLM never sees the whole handbook — just the top 5 chunks.
-That's the whole point of RAG: smaller context, cheaper, grounded answers.
+The LLM never sees the whole handbook — just the top 5 chunks the reranker
+judged best. That's the whole point of RAG: smaller context, cheaper,
+grounded answers.
 
 The LLM is any OpenAI-compatible API, configured in .env
 (LLM_BASE_URL / LLM_MODEL / LLM_API_KEY).
@@ -16,12 +17,13 @@ Run:
   python step4_answer.py "Can I take a day off to attend my sister's wedding?"
   python step4_answer.py --dry-run "How much vacation do I get after one year?"
   (add --dry-run to see the exact prompt without calling the LLM — no key needed)
+  (add --no-rerank to skip the reranker and use plain similarity order)
 """
 
 import sys
 
 from helpers import LLM_MAX_TOKENS, LLM_MODEL, get_llm, require_api_key
-from step3_search import TOP_K, load_store, vector_search
+from step3_search import TOP_K, load_store, search
 
 DEFAULT_QUESTION = "Can I take a day off to attend my sister's wedding?"
 
@@ -38,7 +40,7 @@ def build_prompt(question, hits):
     """Augmentation: wrap the retrieved chunks around the question."""
     excerpts = "\n\n".join(
         f"[Excerpt {i + 1}] — handbook, page {h[0]['metadata']['page']} "
-        f"(similarity {h[1]:.2f})\n{h[0]['text']}"
+        f"(relevance {h[1]:.3f})\n{h[0]['text']}"
         for i, h in enumerate(hits)
     )
     return f"Handbook excerpts:\n\n{excerpts}\n\nQuestion: {question}"
@@ -47,15 +49,16 @@ def build_prompt(question, hits):
 def main():
     args = list(sys.argv[1:])
     dry_run = "--dry-run" in args
-    args = [a for a in args if a != "--dry-run"]
+    use_reranker = "--no-rerank" not in args
+    args = [a for a in args if a not in ("--dry-run", "--no-rerank")]
     question = " ".join(args) or DEFAULT_QUESTION
 
-    hits = vector_search(question, load_store(), top_k=TOP_K)
+    hits = search(question, load_store(), top_k=TOP_K, use_reranker=use_reranker)
 
     print(f"Question: {question}\n")
     print("Retrieved chunks (R):")
     for entry, score in hits:
-        print(f"  {score:.2f}  [p.{entry['metadata']['page']}]")
+        print(f"  {score:.3f}  [p.{entry['metadata']['page']}]")
     print()
 
     prompt = build_prompt(question, hits)

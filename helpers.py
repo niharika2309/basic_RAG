@@ -5,9 +5,12 @@ plumbing they share:
 
   - config (model names, API key) read from a .env file
   - get_embedder()  a small LOCAL model that turns text into embeddings
+  - get_reranker()  a small LOCAL model that scores how well a chunk
+                    answers a question (used by step 3's second pass)
   - get_llm()       a client for any OpenAI-compatible LLM API
 """
 
+import math
 import os
 
 from dotenv import load_dotenv
@@ -16,6 +19,8 @@ load_dotenv()  # reads KEY=value lines from .env, if one exists
 
 # Everything is configurable, so you can swap models without touching code.
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L12-v2")
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", "20"))
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -60,6 +65,59 @@ def embed(texts):
         show_progress_bar=len(texts) > 1,  # no progress bar for one question
     )
     return np.asarray(vectors)
+
+
+_reranker = None
+_reranker_error = None
+
+
+def get_reranker():
+    """Load the small cross-encoder that re-checks search results (once).
+
+    The embedding model compares two *fingerprints*, so the question and the
+    chunk are encoded separately, never side by side. A cross-encoder reads
+    them TOGETHER — "question + chunk" go in, one relevance score comes out.
+    That is much more careful, and much slower: it has to re-read every
+    candidate, which is why step 3 only shows it the ~20 the search found
+    first, instead of the whole handbook.
+
+    This one is the standard small, fast choice (~100 MB, from Hugging Face,
+    then offline and free). If it can't load — no internet, a typo in
+    RERANKER_MODEL — the reason is remembered, so one bad model name doesn't
+    mean waiting out the same download for every question.
+    """
+    global _reranker, _reranker_error
+    if _reranker is not None:
+        return _reranker
+    if _reranker_error is not None:
+        raise _reranker_error
+
+    from sentence_transformers import CrossEncoder
+
+    print(f"Loading reranker model '{RERANKER_MODEL}' "
+          f"(first run downloads it, ~100 MB)...")
+    try:
+        _reranker = CrossEncoder(RERANKER_MODEL)
+    except Exception as exc:
+        _reranker_error = exc
+        raise
+    print("Reranker ready.\n")
+    return _reranker
+
+
+def rerank(question, texts):
+    """Score each text against the question: a 0..1 relevance per text.
+
+    1.0 = this chunk answers the question, 0.0 = it doesn't. Unlike
+    similarity, which only asks "do these mean something alike?", this one
+    has actually read both together.
+    """
+    if not texts:
+        return []
+    logits = get_reranker().predict([(question, text) for text in texts])
+    # The model's raw output is an unbounded score, so squash each one into
+    # 0..1. (Clamping first keeps extreme values from overflowing math.exp.)
+    return [1 / (1 + math.exp(-min(30.0, max(-30.0, float(x))))) for x in logits]
 
 
 _llm_client = None

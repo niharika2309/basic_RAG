@@ -1,7 +1,8 @@
 # Reads the PDF (step 1)
 pypdf>=6.0
 
-# The local MiniLM embedding model (pulls in PyTorch — a large one-time download)
+# The local MiniLM embedding model and the local cross-encoder reranker
+# (both from sentence-transformers; pulls in PyTorch — a large one-time download)
 sentence-transformers>=5.1
 
 # Vector math for the search step

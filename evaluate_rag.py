@@ -10,14 +10,17 @@ Run from the repository root:
     python evaluate_rag.py
 
 Uses:
-- Existing document retrieval from step3_search.py
+- Existing document retrieval from step3_search.py (search + reranker)
 - Existing answer generation from step4_answer.py
 - Existing embedding model from helpers.py
 - LM Studio (or another OpenAI-compatible endpoint) for evaluation
+
+Run with --no-rerank to evaluate search-only retrieval for comparison.
 """
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from datasets import Dataset
@@ -39,16 +42,22 @@ from helpers import (
     LLM_EVAL_BASE_URL,
     LLM_EVAL_MODEL,
     LLM_MAX_TOKENS,
+    RERANKER_MODEL,
     get_embedder,
     get_llm_eval,
 )
-from step3_search import TOP_K, load_store, vector_search
+from step3_search import TOP_K, load_store, search
 from step4_answer import SYSTEM_PROMPT, build_prompt
 
 
 load_dotenv()
 
 OUTPUT_PATH = Path("ragas_results.json")
+
+# Retrieval uses the same two passes as the app: similarity search, then the
+# reranker. Run with --no-rerank to score the search-only version instead, so
+# the two can be compared on the same questions.
+USE_RERANKER = "--no-rerank" not in sys.argv
 
 
 # Add more test questions here as needed.
@@ -176,6 +185,7 @@ def main():
     references = []
 
     print(f"Embedding model: {EMBEDDING_MODEL}")
+    print(f"Reranker: {RERANKER_MODEL if USE_RERANKER else 'off'}")
     print(f"Evaluation model: {LLM_EVAL_MODEL}")
     print(f"Evaluation endpoint: {LLM_EVAL_BASE_URL}")
     print(f"Evaluating {len(EVAL_CASES)} questions...\n")
@@ -184,7 +194,7 @@ def main():
         question = case["question"]
 
         # Retrieve passages using the existing RAG pipeline.
-        hits = vector_search(question, store, top_k=TOP_K)
+        hits = search(question, store, top_k=TOP_K, use_reranker=USE_RERANKER)
 
         retrieved_contexts = [
             entry["text"] for entry, _score in hits

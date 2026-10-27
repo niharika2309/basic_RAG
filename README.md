@@ -27,13 +27,19 @@ relevant pages — so answers are grounded in your document, and cheap to produc
 ```
           AHEAD OF TIME (run once)                     AT QUESTION TIME
    ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐
+   │                                        │   │ question ──► embedding                  │
+   │                                        │   │         │                               │
+   │                                        │   │         ▼                               │
+   │                                        │   │ [3a] search: rank every chunk by        │
+   │                                        │   │ similarity  ──►  20 candidates          │
    │                                        │   │                                         │
-   │  PDF ──► [1] chunks ──► [2] embeddings │   │  question ──► embedding ──► [3] search  │
-   │                                        │   │                                 ──► top 5   │
-   └────────────────────────────────────────┘   │                                         │
-                                                │  [4] prompt = pages + question ──► LLM   │
-                                                │                              │           │
-                                                │                        final answer      │
+   │                                        │   │ [3b] rerank: read each candidate        │
+   │ PDF ──► [1] chunks ──► [2] embeddings  │   │ together with the question              │
+   │                                        │   │         ──►  top 5 chunks               │
+   │                                        │   │                                         │
+   └────────────────────────────────────────┘   │ [4] prompt = pages + question ──► LLM   │
+   │                                        │   │                           │             │
+   │                                        │   │                     final answer        │
                                                 └─────────────────────────────────────────┘
 ```
 
@@ -146,11 +152,100 @@ nothing useful here. But the search matches *meaning* — the question is about
 (closest match: leave for a family death) it surfaces. That's the whole
 promise of embeddings, in one command.
 
+## Step 3.5 — Double-check the hits (*reranking*)
+
+Similarity has a blind spot, and it's worth stating out loud: the question's
+fingerprint is compared against fingerprints that were made **without ever
+seeing the question**. Chunking and embedding happened ahead of time, so a
+page of table-of-contents dots can look "similar" to a question about
+vacation — its words are all about vacation.
+
+The fix is the second, older trick in retrieval: a **reranker**. Instead of
+comparing two fingerprints, a small *cross-encoder* model reads the question
+and one chunk **at the same time** and answers one question: *does this chunk
+actually answer this?* Much better judgment — and far too slow to run over
+all 257 chunks, since it means reading each one from scratch. So step 3 does
+what every real search system does:
+
+1. **Search** all chunks cheaply → keep 20 candidates
+2. **Rerank** those 20 carefully → keep the top 5 that go to the LLM
+
+Ask the same question with both scores printed:
+
+```bash
+python step3_search.py "How much vacation do I get after one year?"
+```
+
+```
+20 candidates found by similarity, then the reranker
+re-reads them all and keeps the best 5 — both scores are shown,
+so you can see what the second pass changed:
+
+  page   similar   answers
+    14      0.50     0.605
+         increments of one day.xii Accumulating Vacation: Employees are encouraged ...
+    13      0.53     0.516
+         year Years 6 through 10 4.62 hours biweekly, for a maximum of 15 days per ...
+    13      0.48     0.010
+         Benefitsv iii [ORGANIZATION] has established the following vacation plan ...
+     3      0.51     0.001
+         Benefits.......................................................................
+    14      0.49     0.001
+         vacation has dropped below the cap. Vacation Pay: Vacation pay shall be ...
+```
+
+Look at page 3: **0.51 similar, 0.001 relevant** — the table of contents.
+The reranker is the only stage that could tell it apart, because it's the
+only stage that read it *against your question*. The chunks about actual
+vacation accrual move up instead.
+
+Two ways to see it for yourself:
+
+```bash
+python step3_search.py --no-rerank "..."   # skip the second pass
+python step4_answer.py --dry-run "..."     # watch the prompt's excerpts reorder
+```
+
+In the web app you don't have to ask twice: under every answer there's a
+**🔁 The same passages, before and after the re-check** panel — the search's
+own top 5 in one column, the reranker's in the next, every move marked (it
+renders side by side; it's stacked here):
+
+```
+🔁 The re-check moved 3 of 5 passages · dropped page 5 · dropped page 9
+
+Before — the search's own top 5
+  1. p.10 · similar 0.671 — ✓ kept
+  2. p.10 · similar 0.635 — ✓ kept
+  3. p.3  · similar 0.602 — → moved to #4
+  4. p.5  · similar 0.555 — ✕ dropped out
+  5. p.9  · similar 0.502 — ✕ dropped out
+
+After — the reranker's top 5
+  1. p.10 · relevance 0.998 — ✓ stayed
+  2. p.10 · relevance 0.973 — ✓ stayed
+  3. p.5  · relevance 0.098 — ▲ new — was #8
+  4. p.3  · relevance 0.017 — ▼ from #3
+  5. p.3  · relevance 0.013 — ▲ new — was #7
+```
+
+That last pair of lines is the whole argument for the second pass: two chunks
+ranked 7th and 8th by similarity — never good enough to reach the LLM on
+their own — do answer the question, and the reranker is the only stage that
+can notice. (Flip the sidebar toggle off and the panel disappears: with one
+pass there's nothing to compare.)
+
+The cost is honest and small: one more local model (~100 MB, free to run,
+downloads once), plus one pass of it over 20 candidates per question — well
+under a second on a laptop. That's the standard trade: the cheap stage keeps
+the expensive stage's workload tiny, and the expensive stage fixes what the
+cheap one can't see.
+
 ## Step 4 — Ask the LLM to answer from those pages only
 
-The 5 chunks and your question are wrapped into a single prompt and sent to
-the LLM, with one rule: *answer only from what you're shown — and if the
-answer isn't there, say so instead of guessing.*
+The 5 chunks the reranker picked, and your question, are wrapped into a
+single prompt and sent to the LLM, with one rule: *answer only from what
+you're shown — and if the answer isn't there, say so instead of guessing.*
 
 ```bash
 python step4_answer.py "Can I take a day off to attend my sister's wedding?"
@@ -160,11 +255,11 @@ python step4_answer.py "Can I take a day off to attend my sister's wedding?"
 Question: Can I take a day off to attend my sister's wedding?
 
 Retrieved chunks (R):
-  0.39  [p.28]
-  0.36  [p.11]
-  0.35  [p.13]
-  0.35  [p.14]
-  0.34  [p.29]
+  0.000  [p.28]
+  0.000  [p.11]
+  0.000  [p.13]
+  0.000  [p.14]
+  0.000  [p.29]
 
 Answer (from Qwen3.8-27B):
 
@@ -175,6 +270,12 @@ and time off for school/child-care activities.
 
 Sources: page 28, page 11, page 13, page 14, page 29
 ```
+
+Those scores are the reranker's verdict, and they're blunt: *~0.000 for every
+chunk*. Retrieval already knows none of these passages answers the question —
+it's the same signal the LLM acts on below. (Compare with
+`python step4_answer.py --dry-run "How much vacation do I get after one year?"`,
+where the top chunks score 0.6.)
 
 That's RAG in full: **R**etrieve the pages, **A**ugment the prompt with
 them, **G**enerate an answer. And look at the behavior: the handbook has no
@@ -207,10 +308,14 @@ streamlit run app.py
 ```
 
 then open <http://localhost:8501>. Ask a question, get an answer, and a
-footer underneath shows the handbook passages it used, with their pages.
-The sidebar explains the whole pipeline in plain language. Without an LLM
+footer underneath shows the handbook passages it used, with their pages and
+their reranker scores — plus the before/after panel from step 3.5, so the
+reranker's effect is visible without asking anything twice. The sidebar
+explains the whole pipeline in plain language, and its **Re-check results
+with the reranker** toggle turns the second pass off entirely, so you can
+see what retrieval looks like without it. Without an LLM
 key the app still works: it shows the passages it found, so you can watch
-the *retrieval* half of RAG for free.
+the *retrieval* half of RAG — search and rerank — for free.
 
 ## What you need
 
@@ -218,8 +323,9 @@ the *retrieval* half of RAG for free.
 - **An API key for an LLM** — only for step 4 and the web app. Any
   OpenAI-compatible API works (OpenAI, Groq, OpenRouter, a local Ollama
   server, …).
-- **Nothing else.** The embedding model runs on your own computer: no key,
-  no cost, private. It downloads itself once (~130 MB) on the first run.
+- **Nothing else.** Both small models — the one that makes embeddings and the
+  one that reranks — run on your own computer: no key, no cost, private. They
+  download themselves once on first use (~130 MB and ~100 MB).
 
 ## Setup
 
@@ -269,6 +375,8 @@ your shell) — no code changes:
 | `LLM_MODEL` | `gpt-4o-mini` | the chat model |
 | `LLM_MAX_TOKENS` | `2000` | budget for the answer |
 | `EMBEDDING_MODEL` | `all-MiniLM-L12-v2` | the local embedding model |
+| `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | the local reranker (step 3.5) |
+| `RERANK_CANDIDATES` | `20` | how many search hits the reranker re-reads |
 
 Examples:
 
@@ -293,6 +401,13 @@ default. If you change the embedding model, **re-run steps 2 and 3** — a
 question's embedding is only comparable to chunks embedded with the *same*
 model.
 
+The reranker is a different kind of model (a *cross-encoder*), so any of them
+on Hugging Face can replace it — `cross-encoder/ms-marco-MiniLM-L-12-v2` is
+more accurate and slower, `cross-encoder/ms-marco-TinyBERT-L-2-v2` is quicker
+and rougher. It reads your question and a chunk as one input, so it's
+independent of your embedding model: swapping it needs no re-embedding. And
+if you'd rather not pay for the second pass at all, `--no-rerank` skips it.
+
 ## What this version leaves out
 
 Deliberately. Each of these is its own follow-up:
@@ -308,8 +423,17 @@ Deliberately. Each of these is its own follow-up:
   let the embedding model decide where the topic changes. Trying a second
   strategy — and watching what it retrieves for the same questions — is the
   most valuable next experiment.
-- **Reranking / evaluation** — measuring whether a change actually makes
-  retrieval better.
+- **Tuned reranking** — the reranker hands the LLM a fixed top 5, even when
+  every score says "none of these". A cutoff (answer only from chunks above
+  some relevance, or say you don't know) is the next knob — and
+  `evaluate_rag.py` is how you check whether turning it helped.
+- **Hybrid retrieval** — the search pass is embeddings only. Mixing in a
+  keyword score (BM25) catches the exact strings embeddings blur: policy
+  names, form numbers, error codes.
+- **A tuned candidate list** — 20 candidates is a guess at the balance
+  between the cheap pass and the careful one. `RERANK_CANDIDATES` is the
+  knob; measuring what raising or lowering it costs (and gains) is the
+  exercise.
 
 One concept at a time.
 
@@ -317,12 +441,13 @@ One concept at a time.
 
 ```
 ├── data/employee-handbook.pdf   the 40-page source document
-├── helpers.py                   .env config, embedder, LLM client
+├── helpers.py                   .env config, embedder, reranker, LLM client
 ├── step1_extract_and_chunk.py   PDF → chunks + page tags  → chunks.json
 ├── step2_embed.py               chunks → embeddings      → vector_store.json
-├── step3_search.py              question → top 5 chunks (cosine similarity)
+├── step3_search.py              question → 20 candidates → reranked top 5
 ├── step4_answer.py              top 5 chunks + question → LLM answer
 ├── app.py                       ChatGPT-style web UI (streamlit run app.py)
+├── evaluate_rag.py              RAGAS scores for the same pipeline
 ├── requirements.txt
 └── .env.example                 copy to .env, add your key
 ```
